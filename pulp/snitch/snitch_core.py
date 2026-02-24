@@ -520,3 +520,36 @@ class Spatz(cpu.iss.riscv.RiscvCommon):
         self.add_sources([
             "cpu/iss/src/spatz.cpp",
         ])
+
+
+class Quadrilatero(cpu.iss.riscv.RiscvCommon):
+
+    def __init__(self,
+            parent,
+            name,
+            isa: str='rv32imafdc',
+            misa: int=None,
+            binaries: list=[],
+            fetch_enable: bool=False,
+            boot_addr: int=0,
+            use_rv32v=False):
+
+
+        extensions = [ cpu.iss.isa_gen.isa_rvm.Rv32m()]
+
+        isa_instance = cpu.iss.isa_gen.isa_riscv_gen.RiscvIsa("quadrilatero_" + isa, isa, extensions=extensions)
+
+        if misa is None:
+            misa = isa_instance.misa
+
+        super().__init__(parent, name, isa=isa_instance, misa=misa, core="quadrilatero")
+
+        self.add_c_flags([
+            "-DPIPELINE_STAGES=1",
+            "-DCONFIG_ISS_CORE=quadrilatero",
+        ])
+
+        self.add_sources([
+            "cpu/iss/src/quadrilatero.cpp",
+        ])
+
