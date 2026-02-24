@@ -17,6 +17,7 @@
 import cpu.iss.riscv
 from pulp.snitch.snitch_isa import *
 import cpu.iss.isa_gen.isa_rvv
+import cpu.iss.isa_gen.isa_rvm
 import cpu.iss.isa_gen.isa_rvv_timed
 from cpu.iss.isa_gen.isa_smallfloats import *
 from cpu.iss.isa_gen.isa_pulpv2 import *
