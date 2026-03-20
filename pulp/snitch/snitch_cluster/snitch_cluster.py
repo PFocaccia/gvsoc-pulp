@@ -58,12 +58,15 @@ if os.environ.get('USE_GVRUN') is None:
             nb_masters = self.nb_core
             if properties.use_spatz:
                 nb_masters += self.nb_core * properties.spatz_nb_lanes
+            if properties.use_quadrilatero:
+                nb_masters += self.nb_core * 4
             self.tcdm          = ClusterArch.Tcdm(base, nb_masters)
             self.peripheral    = Area( base + 0x0002_0000, 0x0001_0000)
             self.zero_mem      = Area( base + 0x0003_0000, 0x0001_0000)
             self.core_type = properties.core_type
             self.use_spatz = properties.use_spatz
             self.spatz_nb_lanes = properties.spatz_nb_lanes
+            self.use_quadrilatero = properties.use_quadrilatero
             self.isa = properties.isa
 
         class Tcdm:
@@ -79,7 +82,7 @@ else:
 
     class ClusterArch(Tree):
         def __init__(self, parent, name, base, first_hartid, auto_fetch=False,
-                boot_addr=0x0000_1000, nb_core_per_cluster=None, spatz=False, spatz_nb_lanes=4,
+                boot_addr=0x0000_1000, nb_core_per_cluster=None, spatz=False, spatz_nb_lanes=4, quadrilatero=False,
                 core_type='accurate', isa=None):
             super().__init__(parent, name)
 
@@ -100,11 +103,14 @@ else:
             nb_masters = self.nb_core
             if spatz:
                 nb_masters += self.nb_core * spatz_nb_lanes
+            if quadrilatero:                                         
+                nb_masters += self.nb_core * 4
             self.tcdm          = ClusterArch.Tcdm(self, 'tcdm', base, nb_masters)
             self.peripheral    = Area( self, 'peripheral', base + 0x0002_0000, 0x0001_0000, 'peripheral range')
             self.zero_mem      = Area( self, 'zero_mem', base + 0x0003_0000, 0x0001_0000, 'zero mem range')
             self.core_type = core_type
             self.use_spatz = spatz
+            self.use_quadrilatero = quadrilatero
             self.spatz_nb_lanes = spatz_nb_lanes
             self.isa = isa
 
@@ -204,12 +210,12 @@ class SnitchCluster(gvsoc.systree.Component):
 
         for core_id in range(0, arch.nb_core):
 
-            if arch.core_type == 'fast' or arch.use_spatz:
+            if arch.core_type == 'fast' or arch.use_spatz or arch.use_quadrilatero:
                 cores.append(iss.SnitchFast(self, f'pe{core_id}', isa=arch.isa,
                     fetch_enable=arch.auto_fetch, boot_addr=arch.boot_addr,
                     core_id=arch.first_hartid + core_id, htif=True, binaries=binaries,
                     inc_spatz=arch.use_spatz, spatz_nb_lanes=arch.spatz_nb_lanes,
-                    spatz_lane_width=8
+                    spatz_lane_width=8, inc_quadrilatero=arch.use_quadrilatero,
                 ))
 
             else:
@@ -281,6 +287,11 @@ class SnitchCluster(gvsoc.systree.Component):
                     cores[core_id].o_VLSU(port, tcdm.i_INPUT(tcdm_port))
                     tcdm_port += 1
 
+            if arch.use_quadrilatero:
+                for port in range(0, 4):
+                    cores[core_id].o_MLSU(port, tcdm.i_INPUT(tcdm_port))
+                    tcdm_port += 1
+
             cores_ico[core_id].o_MAP(narrow_axi.i_INPUT())
             cores[core_id].o_FETCH(icache.i_INPUT(core_id))
 
@@ -290,7 +301,7 @@ class SnitchCluster(gvsoc.systree.Component):
 
 
         for core_id in range(0, arch.nb_core):
-            if arch.core_type == 'accurate' and not arch.use_spatz:
+            if arch.core_type == 'accurate' and not arch.use_spatz and not arch.use_quadrilatero:
                 fp_cores[core_id].o_DATA( cores_ico[core_id].i_INPUT() )
                 self.__o_FETCHEN( fp_cores[core_id].i_FETCHEN() )
 

@@ -36,15 +36,24 @@ if os.environ.get('USE_GVRUN') is None:
 
     class SnitchArchProperties:
 
-        def __init__(self, spatz=False):
+        def __init__(self, spatz=False, quadrilatero=False):
             self.nb_cluster              = 1
-            self.nb_core_per_cluster     = 2 if spatz else 9
+            if quadrilatero:
+                self.nb_core_per_cluster = 1
+            elif spatz:
+                self.nb_core_per_cluster = 2
+            else:
+                self.nb_core_per_cluster = 9
+
             self.hbm_size                = 0x8000_0000
             self.hbm_type                = 'simple'
             self.noc_type                = 'simple'
             self.core_type               = 'accurate'
             self.use_spatz               = spatz
             self.spatz_nb_lanes          = 4
+            self.use_quadrilatero        = quadrilatero
+            self.matrix_units            = 1
+            self.matrix_tcdm_ports       = 4
             self.isa                     = 'rv32imfdcav' if spatz else 'rv32imfdca'
 
 
@@ -78,10 +87,10 @@ if os.environ.get('USE_GVRUN') is None:
 
     class SnitchArch:
 
-        def __init__(self, target, properties=None, spatz=False):
+        def __init__(self, target, properties=None, spatz=False, quadrilatero=False):
 
             if properties is None:
-                properties = SnitchArchProperties(spatz=spatz)
+                properties = SnitchArchProperties(spatz=spatz, quadrilatero=quadrilatero)
 
             properties.declare_target_properties(target)
 
@@ -141,7 +150,7 @@ if os.environ.get('USE_GVRUN') is None:
 else:
 
     class SnitchAttr(Tree):
-        def __init__(self, parent, name, nb_cluster=1, spatz=False, spatz_nb_lanes=4):
+        def __init__(self, parent, name, nb_cluster=1, spatz=False, spatz_nb_lanes=4, quadrilatero=False):
             super().__init__(parent, name)
 
             self.chip = SnitchAttr.Chip(self, 'chip', spatz, spatz_nb_lanes, nb_cluster)
@@ -453,7 +462,7 @@ class Snitch(gvsoc.systree.Component):
 
 class SnitchBoard(gvsoc.systree.Component):
 
-    def __init__(self, parent, name:str, parser, options, spatz=False):
+    def __init__(self, parent, name:str, parser, options, spatz=False, quadrilatero=False):
         super().__init__(parent, name, options=options)
 
         binary = None
@@ -467,9 +476,9 @@ class SnitchBoard(gvsoc.systree.Component):
         clock = Clock_domain(self, 'clock', frequency=10000000)
 
         if os.environ.get('USE_GVRUN') is None:
-            arch = SnitchArch(self, spatz=spatz)
+            arch = SnitchArch(self, spatz=spatz, quadrilatero=quadrilatero)
         else:
-            arch = SnitchAttr(self, 'snitch', spatz=spatz)
+            arch = SnitchAttr(self, 'snitch', spatz=spatz, quadrilatero=quadrilatero)
 
         chip = Snitch(self, 'chip', parser, arch.chip, binary, debug_binaries)
 
@@ -485,6 +494,13 @@ class SnitchBoard(gvsoc.systree.Component):
 
 
 class SpatzBoard(SnitchBoard):
-
     def __init__(self, parent, name:str, parser, options):
-        super().__init__(parent, name, parser, options, spatz=True)
+        super().__init__(parent, name, parser, options, spatz=True, quadrilatero=False)
+
+class QuadrilateroBoard(SnitchBoard):
+    def __init__(self, parent, name:str, parser, options):
+        super().__init__(parent, name, parser, options, spatz=False, quadrilatero=True)
+
+class SpatzQuadrilateroBoard(SnitchBoard):
+    def __init__(self, parent, name:str, parser, options):
+        super().__init__(parent, name, parser, options, spatz=True, quadrilatero=True)

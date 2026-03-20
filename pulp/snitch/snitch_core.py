@@ -191,6 +191,7 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
             fetch_enable: bool=False,
             boot_addr: int=0,
             inc_spatz: bool=False,
+            inc_quadrilatero: bool=False,
             core_id: int=0,
             htif: bool=False, vlen: int=512, spatz_nb_lanes=4,
             spatz_lane_width=8,
@@ -220,7 +221,9 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
                     extensions += [Rv32frep()]
                     if ssr:
                         extensions += [Rv32ssr()]
-
+            
+            if inc_quadrilatero:
+                extensions += [ cpu.iss.isa_gen.isa_rvm.Rv32m() ]
 
             isa_instance = cpu.iss.isa_gen.isa_riscv_gen.RiscvIsa("snitch_" + isa, isa,
                 extensions=extensions)
@@ -245,6 +248,7 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
             modules=modules, config=config)
 
         self.inc_spatz = inc_spatz
+        self.inc_quadrilatero = inc_quadrilatero
 
         if pulp_v2:
             self.add_c_flags([f'-DCONFIG_GVSOC_ISS_SNITCH_PULP_V2=1'])
@@ -318,6 +322,9 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
             }
         })
 
+        if inc_quadrilatero:
+            self.add_c_flags(["-DCONFIG_GVSOC_ISS_USE_QUADRILATERO"])
+            self.add_sources(["cpu/iss/src/quadrilatero.cpp"])
 
     def o_BARRIER_REQ(self, itf: gvsoc.systree.SlaveItf):
         self.itf_bind('barrier_req', itf, signature='wire<bool>')
@@ -338,6 +345,12 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
             self.itf_bind(f'vlsu_{port}', itf, signature='io')
         else:
             raise RuntimeError('Vector data interface is not available')
+
+    def o_MLSU(self, port: int, itf: gvsoc.systree.SlaveItf):
+        if self.inc_quadrilatero:
+            self.itf_bind(f'mlsu_{port}', itf, signature='io')
+        else:
+            raise RuntimeError('Matrix data interface is not available')    
 
     def gen_gui(self, parent_signal):
         active = super().gen_gui(parent_signal)
