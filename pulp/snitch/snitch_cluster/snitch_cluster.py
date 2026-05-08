@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 
+import os
 import gvsoc.runner
 import pulp.snitch.snitch_core as iss
 import memory.memory as memory
@@ -26,7 +27,6 @@ from pulp.snitch.zero_mem import ZeroMem
 from elftools.elf.elffile import *
 from pulp.idma.snitch_dma import SnitchDma
 from pulp.cluster.l1_interleaver import L1_interleaver
-import gvsoc.runner
 import math
 from pulp.snitch.sequencer import Sequencer
 from pulp.snitch.hierarchical_cache import Hierarchical_cache
@@ -56,10 +56,15 @@ if os.environ.get('USE_GVRUN') is None:
             self.barrier_irq = 19
 
             nb_masters = self.nb_core
-            if properties.use_spatz:
-                nb_masters += self.nb_core * properties.spatz_nb_lanes
-            if properties.use_quadrilatero:
-                nb_masters += self.nb_core * 4
+
+            if properties.use_spatz and properties.use_quadrilatero:
+                nb_masters += properties.spatz_nb_lanes + 4 
+            else:
+                if properties.use_spatz:
+                    nb_masters += self.nb_core * properties.spatz_nb_lanes
+                if properties.use_quadrilatero:
+                    nb_masters += self.nb_core * 4
+                    
             self.tcdm          = ClusterArch.Tcdm(base, nb_masters)
             self.peripheral    = Area( base + 0x0002_0000, 0x0001_0000)
             self.zero_mem      = Area( base + 0x0003_0000, 0x0001_0000)
@@ -101,10 +106,15 @@ else:
             self.barrier_irq = 19
 
             nb_masters = self.nb_core
-            if spatz:
-                nb_masters += self.nb_core * spatz_nb_lanes
-            if quadrilatero:                                         
-                nb_masters += self.nb_core * 4
+
+            if spatz and quadrilatero:
+                nb_masters += spatz_nb_lanes + 4
+            else:
+                if spatz:
+                    nb_masters += self.nb_core * spatz_nb_lanes
+                if quadrilatero:                                         
+                    nb_masters += self.nb_core * 4
+                    
             self.tcdm          = ClusterArch.Tcdm(self, 'tcdm', base, nb_masters)
             self.peripheral    = Area( self, 'peripheral', base + 0x0002_0000, 0x0001_0000, 'peripheral range')
             self.zero_mem      = Area( self, 'zero_mem', base + 0x0003_0000, 0x0001_0000, 'zero mem range')
@@ -210,20 +220,25 @@ class SnitchCluster(gvsoc.systree.Component):
 
         for core_id in range(0, arch.nb_core):
 
-            if arch.core_type == 'fast' or arch.use_spatz or arch.use_quadrilatero:
-                cores.append(iss.SnitchFast(self, f'pe{core_id}', isa=arch.isa,
+            core_has_spatz = arch.use_spatz and (not arch.use_quadrilatero or core_id == 0)
+            core_has_quadrilatero = arch.use_quadrilatero and (not arch.use_spatz or core_id == 1)
+
+            core_isa = 'rv32imfdcav' if core_has_spatz else 'rv32imfdca'
+
+            if arch.core_type == 'fast' or core_has_spatz or core_has_quadrilatero:
+                cores.append(iss.SnitchFast(self, f'pe{core_id}', isa=core_isa,   
                     fetch_enable=arch.auto_fetch, boot_addr=arch.boot_addr,
                     core_id=arch.first_hartid + core_id, htif=True, binaries=binaries,
-                    inc_spatz=arch.use_spatz, spatz_nb_lanes=arch.spatz_nb_lanes,
-                    spatz_lane_width=8, inc_quadrilatero=arch.use_quadrilatero,
+                    inc_spatz=core_has_spatz, spatz_nb_lanes=arch.spatz_nb_lanes,
+                    spatz_lane_width=8, inc_quadrilatero=core_has_quadrilatero,
                 ))
 
             else:
-                cores.append(iss.Snitch(self, f'pe{core_id}', isa=arch.isa,
+                cores.append(iss.Snitch(self, f'pe{core_id}', isa=core_isa,      
                     fetch_enable=arch.auto_fetch, boot_addr=arch.boot_addr,
                     core_id=arch.first_hartid + core_id, htif=True, binaries=binaries))
 
-                fp_cores.append(iss.Snitch_fp_ss(self, f'fp_ss{core_id}', isa=arch.isa,
+                fp_cores.append(iss.Snitch_fp_ss(self, f'fp_ss{core_id}', isa=core_isa, 
                     fetch_enable=arch.auto_fetch, boot_addr=arch.boot_addr,
                     core_id=arch.first_hartid + core_id, htif=True, binaries=binaries))
                 if xfrep:
@@ -277,17 +292,21 @@ class SnitchCluster(gvsoc.systree.Component):
 
         tcdm_port = 0
         for core_id in range(0, arch.nb_core):
+            
+            core_has_spatz = arch.use_spatz and (not arch.use_quadrilatero or core_id == 0)
+            core_has_quadrilatero = arch.use_quadrilatero and (not arch.use_spatz or core_id == 1)
+
             cores[core_id].o_DATA(cores_ico[core_id].i_INPUT())
             cores_ico[core_id].o_MAP(tcdm.i_INPUT(tcdm_port), base=arch.tcdm.area.base,
                 size=arch.tcdm.area.size, rm_base=True)
             tcdm_port += 1
 
-            if arch.use_spatz:
+            if core_has_spatz:
                 for port in range(0, arch.spatz_nb_lanes):
                     cores[core_id].o_VLSU(port, tcdm.i_INPUT(tcdm_port))
                     tcdm_port += 1
 
-            if arch.use_quadrilatero:
+            if core_has_quadrilatero:
                 for port in range(0, 4):
                     cores[core_id].o_MLSU(port, tcdm.i_INPUT(tcdm_port))
                     tcdm_port += 1
@@ -301,7 +320,11 @@ class SnitchCluster(gvsoc.systree.Component):
 
 
         for core_id in range(0, arch.nb_core):
-            if arch.core_type == 'accurate' and not arch.use_spatz and not arch.use_quadrilatero:
+           
+            core_has_spatz = arch.use_spatz and (not arch.use_quadrilatero or core_id == 0)
+            core_has_quadrilatero = arch.use_quadrilatero and (not arch.use_spatz or core_id == 1)
+
+            if arch.core_type == 'accurate' and not core_has_spatz and not core_has_quadrilatero:
                 fp_cores[core_id].o_DATA( cores_ico[core_id].i_INPUT() )
                 self.__o_FETCHEN( fp_cores[core_id].i_FETCHEN() )
 

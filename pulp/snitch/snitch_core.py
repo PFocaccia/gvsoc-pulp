@@ -218,7 +218,10 @@ class SnitchFast(cpu.iss.riscv.RiscvCommon):
                 extensions = [ Xdma(), Xf16(), Xf16alt(), Xf8(), XfvecSnitch(), Xfaux() ]
 
                 if not inc_spatz:
-                    extensions += [Rv32frep()]
+                    
+                    if not inc_quadrilatero:
+                        extensions += [Rv32frep()]
+                    
                     if ssr:
                         extensions += [Rv32ssr()]
             

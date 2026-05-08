@@ -24,7 +24,9 @@ import interco.router as router
 import utils.loader.loader
 import pulp.floonoc.floonoc
 import math
+import os
 from gvrun.parameter import TargetParameter
+
 if os.environ.get('USE_GVRUN') is None:
     from pulp.snitch.snitch_cluster.snitch_cluster import ClusterArch, Area, SnitchCluster
 else:
@@ -38,7 +40,10 @@ if os.environ.get('USE_GVRUN') is None:
 
         def __init__(self, spatz=False, quadrilatero=False):
             self.nb_cluster              = 1
-            if quadrilatero:
+            
+            if quadrilatero and spatz:
+                self.nb_core_per_cluster = 2
+            elif quadrilatero:
                 self.nb_core_per_cluster = 1
             elif spatz:
                 self.nb_core_per_cluster = 2
